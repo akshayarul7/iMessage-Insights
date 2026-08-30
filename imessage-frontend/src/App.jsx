@@ -10,9 +10,33 @@ import { Calendar } from "@/components/ui/calendar";
 import { 
   MessageSquare, MessageCircle, BarChart2, UserPlus, Settings2, 
   CalendarDays, Search, CalendarIcon, X, Edit2, Trash2, Check, 
-  AlertCircle, CheckCircle2 
+  AlertCircle, CheckCircle2, MapPin
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+
+// Exact Apple UI replicas for Tapbacks
+const TapbackIcon = ({ type, customEmoji }) => {
+  if (customEmoji) {
+    return <span className="text-[15px] leading-none">{customEmoji}</span>;
+  }
+  
+  switch(type) {
+    case 2000: // Love (Solid Soft Pink Heart)
+      return <svg viewBox="0 0 24 24" fill="#FF529A" className="w-[15px] h-[15px] drop-shadow-sm"><path d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>;
+    case 2001: // Like (Solid White Thumb Up)
+      return <svg viewBox="0 0 24 24" fill="#FFFFFF" className="w-[13px] h-[13px] drop-shadow-sm"><path d="M2 20h2c.55 0 1-.45 1-1v-9c0-.55-.45-1-1-1H2v11zm19.83-7.12c.11-.25.17-.52.17-.8V11c0 1.1-.9-2-2-2h-5.98l1.09-5.32V3.36c0-.41-.17-.79-.44-1.06L13.62 1l-6.53 6.64c-.45.47-.73 1.1-.73 1.78v8.42c0 1.29 1.05 2.34 2.34 2.34h7.52c1.23 0 2.25-.97 2.38-2.18l1.23-8.84c.03-.1.05-.2.05-.3l-.05-.98z"/></svg>;
+    case 2002: // Dislike (Solid White Thumb Down)
+      return <svg viewBox="0 0 24 24" fill="#FFFFFF" className="w-[13px] h-[13px] drop-shadow-sm"><path d="M22 4h-2c-.55 0-1 .45-1 1v9c0 .55.45 1 1 1h2V4zM2.17 11.12c-.11.25-.17.52-.17.8V13c0 1.1.9 2 2 2h5.98L8.89 20.32v.32c0 .41.17.79.44 1.06L10.38 23l6.53-6.64c.45-.47.73-1.1.73-1.78V6.16C17.64 4.87 16.59 3.82 15.3 3.82H7.78c-1.23 0-2.25.97-2.38 2.18L4.17 14.84c-.03.1-.05.2-.05.3l.05.98z"/></svg>;
+    case 2003: // Laugh (Stacked HA HA)
+      return <span className="text-[#FFFFFF] font-black tracking-tighter text-[7px] leading-[7.5px] drop-shadow-sm" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}>HA<br/>HA</span>;
+    case 2004: // Emphasize (Apple Pink !!)
+      return <span className="text-[#FFFFFF] font-black text-[15px] leading-none tracking-tighter drop-shadow-sm" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}>!!</span>;
+    case 2005: // Question (White ?)
+      return <span className="text-[#FFFFFF] font-black text-[14px] leading-none drop-shadow-sm" style={{ fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif' }}>?</span>;
+    default:
+      return <span className="text-[#FFFFFF] font-black text-[10px]">...</span>;
+  }
+};
 
 const parseSafeDate = (dateStr) => {
   if (!dateStr) return undefined;
@@ -534,7 +558,13 @@ export default function App() {
                     </Select>
                     
                     <div className="flex items-center gap-4">
-                      <Input type="number" value={msgCount} onChange={(e) => setMsgCount(e.target.value)} disabled={displayAll} className="h-9 w-20 text-sm" />
+                      <Input 
+                        type="number" 
+                        value={msgCount} 
+                        onChange={(e) => setMsgCount(e.target.value)} 
+                        disabled={displayAll} 
+                        className="h-9 w-20 text-sm" 
+                      />
                       <div className="flex items-center space-x-2">
                         <Checkbox id="displayAll" checked={displayAll} onCheckedChange={setDisplayAll} />
                         <label htmlFor="displayAll" className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
@@ -597,22 +627,55 @@ export default function App() {
                               {searchTerm && (
                                 <button 
                                   onClick={() => handleJumpToContext(msg.id)}
-                                  className="text-[10px] font-semibold text-primary hover:underline transition-colors"
+                                  className="flex items-center text-[10px] font-semibold text-primary hover:underline transition-colors"
                                   title="Jump to this message in full context"
                                 >
-                                  📍 Jump
+                                  <MapPin className="h-3 w-3 mr-1" /> Jump
                                 </button>
                               )}
                             </div>
-                            <div 
-                              className={cn(
-                                "px-4 py-2.5 rounded-2xl text-[13px] leading-relaxed transition-all duration-500 shadow-sm", 
-                                isYou ? "bg-[#0a84ff] text-white rounded-br-sm" : "bg-[#262628] text-[#e5e5ea] rounded-bl-sm border-none",
-                                highlightedMsg === msg.id && "ring-2 ring-yellow-500 ring-offset-2 ring-offset-background shadow-[0_0_15px_rgba(234,179,8,0.2)]"
+                            
+                            {/* BUBBLE WRAPPER (Allows absolute positioning for the Apple Tapback badge) */}
+                            <div className="relative">
+                              <div 
+                                className={cn(
+                                  "px-4 py-2.5 rounded-2xl text-[13px] leading-relaxed transition-all duration-500 shadow-sm", 
+                                  isYou ? "bg-[#0a84ff] text-white rounded-br-sm" : "bg-[#262628] text-[#e5e5ea] rounded-bl-sm border-none",
+                                  highlightedMsg === msg.id && "ring-2 ring-yellow-500 ring-offset-2 ring-offset-background shadow-[0_0_15px_rgba(234,179,8,0.2)]"
+                                )}
+                              >
+                                {msg.text}
+                              </div>
+
+                              {/* OVERLAPPING APPLE TAPBACK BADGE */}
+                              {msg.reactions && msg.reactions.length > 0 && (
+                                <div 
+                                  className={cn(
+                                    "absolute -top-3.5 flex -space-x-1.5 z-10",
+                                    isYou ? "-left-3" : "-right-3"
+                                  )}
+                                >
+                                  {msg.reactions.map((reaction, idx) => {
+                                    const isMyReaction = reaction.sender === 'You';
+                                    const bgColor = isMyReaction ? "bg-[#0a84ff]" : "bg-[#262628]";
+                                    
+                                    return (
+                                      <div 
+                                        key={idx} 
+                                        className={cn(
+                                          "border-[2.5px] border-background rounded-full flex items-center justify-center w-8 h-8 shadow-sm",
+                                          bgColor
+                                        )}
+                                        title={`Reacted by ${reaction.sender}`}
+                                      >
+                                        <TapbackIcon type={reaction.type} customEmoji={reaction.customEmoji} />
+                                      </div>
+                                    );
+                                  })}
+                                </div>
                               )}
-                            >
-                              {msg.text}
                             </div>
+
                           </div>
                         );
                       })

@@ -257,7 +257,6 @@ app.get('/api/chat-bounds', async (req, res) => {
 
 // GET: Fetch messages, calculate metrics, and sanitize Apple's binary text
 app.get('/api/messages', async (req, res) => {
-    // Extract query parameters with defaults for safety
     const { chatId, startDate, endDate, sortOrder = 'ASC', limit = 15, displayAll = 'false' } = req.query;
 
     if (!chatId || !startDate || !endDate) {
@@ -265,38 +264,36 @@ app.get('/api/messages', async (req, res) => {
     }
 
     try {
-        // 1. Calculate Metrics (Total, You, Them)
         const statsQuery = `
             SELECT m.is_from_me, COUNT(*) as count
             FROM chat_message_join cmj 
             JOIN message m ON cmj.message_id = m.ROWID 
             WHERE cmj.chat_id = ? 
             AND datetime((m.date/1000000000)+978307200, 'unixepoch', 'localtime') BETWEEN ? AND ?
+            AND (m.associated_message_type IS NULL OR m.associated_message_type = 0)
             GROUP BY m.is_from_me
         `;
 
         const stats = await new Promise((resolve, reject) => {
-            // Passing the dates exactly as formatted by the frontend
             db.all(statsQuery, [chatId, startDate, endDate], (err, rows) => {
                 if (err) reject(err);
                 else resolve(rows);
             });
         });
 
-        let youCount = 0;
-        let themCount = 0;
+        let youCount = 0; let themCount = 0;
         stats.forEach(row => {
             if (row.is_from_me === 1) youCount = row.count;
             else themCount = row.count;
         });
 
-        // 2. Fetch Messages
         const orderDir = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
         const limitClause = displayAll === 'true' ? '' : `LIMIT ${parseInt(limit)}`;
 
         const msgQuery = `
             SELECT 
                 m.ROWID as id, 
+                m.guid,
                 datetime((m.date/1000000000)+978307200, 'unixepoch', 'localtime') AS time, 
                 CASE WHEN m.is_from_me = 1 THEN 'You' ELSE 'Them' END AS sender, 
                 m.text, 
@@ -305,6 +302,7 @@ app.get('/api/messages', async (req, res) => {
             JOIN message m ON m.ROWID = cmj.message_id 
             WHERE cmj.chat_id = ? 
             AND datetime((m.date/1000000000)+978307200, 'unixepoch', 'localtime') BETWEEN ? AND ?
+            AND (m.associated_message_type IS NULL OR m.associated_message_type = 0)
             ORDER BY m.date ${orderDir} 
             ${limitClause}
         `;
@@ -316,7 +314,21 @@ app.get('/api/messages', async (req, res) => {
             });
         });
 
-        // 3. Apple Sanitization Logic (The Emoji Fix)
+        // Use SELECT m.* to dynamically grab custom emoji columns if the user's macOS version supports it
+        const rxQuery = `
+            SELECT m.*
+            FROM chat_message_join cmj
+            JOIN message m ON cmj.message_id = m.ROWID
+            WHERE cmj.chat_id = ? 
+            AND m.associated_message_type BETWEEN 2000 AND 2999
+        `;
+        const reactions = await new Promise((resolve, reject) => {
+            db.all(rxQuery, [chatId], (err, rows) => {
+                if (err) reject(err);
+                else resolve(rows);
+            });
+        });
+
         const appleJunk = [
             'streamtyped', 'NSAttributedString', 'NSMutableString', 'NSString', 'NSDictionary', 
             'NSObject', 'NSMutableDictionary', 'NSNumber', 'NSArray', 'NSMutableArray', 
@@ -326,72 +338,71 @@ app.get('/api/messages', async (req, res) => {
         ];
 
         const cleanedMessages = messages.map(row => {
-            // SAFE EXTRACTION: Default to empty string if null
             let msg = row.text || ''; 
             
-            // If text is empty but attributedBody exists (often the case for modern iMessages)
             if (!msg && row.attributedBody) {
-                // In Node sqlite3, blob data returns as a Buffer. We decode it directly.
                 let raw = row.attributedBody.toString('utf-8');
+                appleJunk.forEach(w => { raw = raw.split(w).join(''); });
                 
-                appleJunk.forEach(w => {
-                    raw = raw.split(w).join('');
-                });
-
-                // Strip unprintable characters
+                // THE FIX: Convert Apple's "smart" typography to standard ASCII before stripping
+                raw = raw.replace(/[\u2018\u2019\u0060\u00B4]/g, "'") // Smart apostrophes
+                         .replace(/[\u201C\u201D]/g, '"')             // Smart quotes
+                         .replace(/[\u2013\u2014]/g, '-');            // En and Em dashes
+                
                 msg = raw.replace(/[^\x20-\x7E]/g, ' '); 
                 msg = msg.replace(/at_\d_[A-F0-9\-]{36}/g, '');
                 msg = msg.trim();
-
                 if (msg.includes('Started Sharing Location')) {
                     msg = 'Started Sharing Location';
                 } else {
-                    // The crucial Emoji binary regex fix ported to JS
                     msg = msg.replace(/^@\s*\+[ \!"#$%&'()*+,\-./:;<=>?@\[\\\]^_`{|}~]*/, '');
-                    if (msg.includes(' iI ')) {
-                        msg = msg.split(' iI ')[0];
-                    }
+                    if (msg.includes(' iI ')) { msg = msg.split(' iI ')[0]; }
                 }
-                
-                // Cleanup hanging artifact blocks
-                msg = msg.replace(/\ufffd/g, '').replace(/\ufffc/g, '');
-                msg = msg.replace(/ {2,}/g, ' ').trim();
+                msg = msg.replace(/\ufffd/g, '').replace(/\ufffc/g, '').replace(/ {2,}/g, ' ').trim();
             }
 
-            // TYPE SAFETY: Force msg to be a string before regex checks
             let safeMsg = String(msg);
+            if (safeMsg.match(/[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}/i)) safeMsg = '[Attachment/Image]';
+            if (!safeMsg || safeMsg.trim() === '*' || safeMsg.trim() === 'q') safeMsg = '[Attachment/Image/Tapback]';
 
-            if (safeMsg.match(/[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}/i)) {
-                safeMsg = '[Attachment/Image]';
-            }
-
-            if (!safeMsg || safeMsg.trim() === '*' || safeMsg.trim() === 'q') {
-                safeMsg = '[Attachment/Image/Tapback]';
-            }
-
-            // Format time from "YYYY-MM-DD HH:MM:SS" to "MM-DD-YYYY h:mm:ss AM/PM"
             const [datePart, timePart] = row.time.split(' ');
             const [year, month, day] = datePart.split('-');
             let [hour, minute, second] = timePart.split(':');
-            
             hour = parseInt(hour, 10);
             const ampm = hour >= 12 ? 'PM' : 'AM';
-            hour = hour % 12 || 12; // Converts '0' (midnight) to '12'
-            
+            hour = hour % 12 || 12; 
             const formattedTime = `${month}-${day}-${year} ${hour}:${minute}:${second} ${ampm}`;
 
+            const msgReactions = reactions
+                .filter(r => {
+                    const targetGuid = r.associated_message_guid ? r.associated_message_guid.replace(/^p:\d+\//, '') : '';
+                    return targetGuid === row.guid;
+                })
+                .map(r => {
+                    // Extract custom emoji from iOS 18 column OR parse it directly from the text string
+                    let customEmoji = r.associated_message_emoji || null;
+                    if (!customEmoji && r.text && ![2000, 2001, 2002, 2003, 2004, 2005].includes(r.associated_message_type)) {
+                        const match = r.text.match(/\p{Extended_Pictographic}/gu);
+                        if (match) customEmoji = match[0];
+                    }
+
+                    return {
+                        type: r.associated_message_type,
+                        sender: r.is_from_me === 1 ? 'You' : 'Them',
+                        customEmoji: customEmoji
+                    };
+                });
+
             return {
-                id: row.id, // <-- Added ID here
+                id: row.id,
                 time: formattedTime,
                 sender: row.sender,
-                text: safeMsg
+                text: safeMsg,
+                reactions: msgReactions
             };
         });
 
-        // If DESC, reverse it so chronological order is maintained for the UI layout
-        if (orderDir === 'DESC') {
-            cleanedMessages.reverse();
-        }
+        if (orderDir === 'DESC') { cleanedMessages.reverse(); }
 
         res.json({
             metrics: { total: youCount + themCount, youCount, themCount },
