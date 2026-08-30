@@ -117,6 +117,61 @@ app.post('/api/contacts', async (req, res) => { // <-- Added 'async'
     }
 });
 
+// PUT: Rename an existing contact
+app.put('/api/contacts/:name', (req, res) => {
+    const oldName = req.params.name;
+    const { newName } = req.body;
+
+    if (!newName || !newName.trim()) {
+        return res.status(400).json({ error: 'New name is required.' });
+    }
+
+    try {
+        const contacts = loadContacts();
+        const cleanNewName = newName.trim();
+
+        if (!contacts[oldName]) {
+            return res.status(404).json({ error: 'Original contact not found.' });
+        }
+
+        // Check if the new name is already taken (case-insensitive)
+        const existingNames = Object.keys(contacts).map(k => k.toLowerCase());
+        if (existingNames.includes(cleanNewName.toLowerCase()) && oldName.toLowerCase() !== cleanNewName.toLowerCase()) {
+            return res.status(400).json({ error: `The name '${cleanNewName}' is already taken.` });
+        }
+
+        // Swap the keys while preserving the phone number
+        const phoneNumber = contacts[oldName];
+        delete contacts[oldName];
+        contacts[cleanNewName] = phoneNumber;
+
+        fs.writeFileSync(CONTACTS_FILE, JSON.stringify(contacts, null, 2));
+        res.json({ message: 'Contact renamed successfully!', contacts });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to rename contact.' });
+    }
+});
+
+// DELETE: Remove a contact
+app.delete('/api/contacts/:name', (req, res) => {
+    const name = req.params.name;
+
+    try {
+        const contacts = loadContacts();
+        
+        if (!contacts[name]) {
+            return res.status(404).json({ error: 'Contact not found.' });
+        }
+
+        delete contacts[name];
+        fs.writeFileSync(CONTACTS_FILE, JSON.stringify(contacts, null, 2));
+        
+        res.json({ message: 'Contact deleted successfully!', contacts });
+    } catch (err) {
+        res.status(500).json({ error: 'Failed to delete contact.' });
+    }
+});
+
 // --- CORE CHAT QUERIES ---
 
 // GET: Fetch calendar boundaries (first and last message dates) for a contact

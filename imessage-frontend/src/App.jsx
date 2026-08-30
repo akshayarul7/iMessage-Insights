@@ -7,17 +7,19 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { MessageSquare, MessageCircle, BarChart2, UserPlus, Settings2, CalendarDays, Search, CalendarIcon, X } from "lucide-react";
+import { 
+  MessageSquare, MessageCircle, BarChart2, UserPlus, Settings2, 
+  CalendarDays, Search, CalendarIcon, X, Edit2, Trash2, Check, 
+  AlertCircle, CheckCircle2 
+} from "lucide-react";
 import { cn } from "@/lib/utils";
 
-// Parses dates to exact noon to eliminate UTC timezone shifting bugs
 const parseSafeDate = (dateStr) => {
   if (!dateStr) return undefined;
   const [year, month, day] = dateStr.split('-');
   return new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10), 12, 0, 0);
 };
 
-// --- THE NEW AESTHETIC DATE PICKER ---
 const AestheticDatePicker = ({ label, dateStr, setDateStr, minDateStr, maxDateStr }) => {
   const minDate = minDateStr ? parseSafeDate(minDateStr) : parseSafeDate('2011-01-01');
   const maxDate = maxDateStr ? parseSafeDate(maxDateStr) : new Date();
@@ -118,15 +120,22 @@ const AestheticDatePicker = ({ label, dateStr, setDateStr, minDateStr, maxDateSt
   );
 };
 
-// --- MAIN APPLICATION ---
 export default function App() {
   const [activeTab, setActiveTab] = useState('chat');
   const [contacts, setContacts] = useState({}); 
   const [selectedContact, setSelectedContact] = useState('');
   const [newName, setNewName] = useState('');
   const [newNumber, setNewNumber] = useState('');
-  const [saveMessage, setSaveMessage] = useState('');
   
+  // Refactored Message States (Objects instead of strings to support dynamic icons)
+  const [saveMessage, setSaveMessage] = useState({ type: '', text: '' });
+  
+  // Contact Management State
+  const [isEditingContact, setIsEditingContact] = useState(false);
+  const [isConfirmingDelete, setIsConfirmingDelete] = useState(false);
+  const [editContactName, setEditContactName] = useState('');
+  const [contactManageMessage, setContactManageMessage] = useState({ type: '', text: '' });
+
   const [chatId, setChatId] = useState(null);
   const [bounds, setBounds] = useState({ min: '', max: '' });
   const [startDate, setStartDate] = useState('');
@@ -136,7 +145,6 @@ export default function App() {
   const [displayAll, setDisplayAll] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Core Chat State
   const [messages, setMessages] = useState([]);
   const [metrics, setMetrics] = useState(null);
   const [searchTerm, setSearchTerm] = useState('');
@@ -159,6 +167,11 @@ export default function App() {
     setMetrics(null);
     setSearchTerm('');
     setIsSearchOpen(false);
+    
+    // Reset management state when switching contacts
+    setIsEditingContact(false);
+    setIsConfirmingDelete(false);
+    setContactManageMessage({ type: '', text: '' });
 
     if (!selectedContact) return;
 
@@ -229,9 +242,9 @@ export default function App() {
   };
 
   const handleSaveContact = async () => {
-    setSaveMessage('');
+    setSaveMessage({ type: '', text: '' });
     if (!newName.trim() || newNumber.length < 14) {
-      setSaveMessage("❌ Please enter a valid name and 10-digit number.");
+      setSaveMessage({ type: 'error', text: "Please enter a valid name and 10-digit number." });
       return;
     }
     try {
@@ -242,16 +255,62 @@ export default function App() {
       });
       const data = await res.json();
       if (!res.ok) {
-        setSaveMessage(`❌ ${data.error}`);
+        setSaveMessage({ type: 'error', text: data.error });
       } else {
-        setSaveMessage(`✅ ${data.message}`);
+        setSaveMessage({ type: 'success', text: data.message });
         setContacts(prev => ({ ...prev, ...data.contact }));
         setNewName('');
         setNewNumber('');
-        setTimeout(() => setSaveMessage(''), 3000);
+        setTimeout(() => setSaveMessage({ type: '', text: '' }), 3000);
       }
     } catch (err) {
-      setSaveMessage("❌ Server connection error.");
+      setSaveMessage({ type: 'error', text: "Server connection error." });
+    }
+  };
+
+  const handleRenameContact = async () => {
+    setContactManageMessage({ type: '', text: '' });
+    if (!editContactName.trim()) return;
+
+    const oldName = Object.keys(contacts).find(key => contacts[key] === selectedContact);
+    
+    try {
+      const res = await fetch(`http://localhost:3001/api/contacts/${encodeURIComponent(oldName)}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newName: editContactName.trim() })
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        setContacts(data.contacts);
+        setIsEditingContact(false);
+      } else {
+        setContactManageMessage({ type: 'error', text: data.error });
+      }
+    } catch (err) {
+      setContactManageMessage({ type: 'error', text: "Network error." });
+    }
+  };
+
+  const handleDeleteContact = async () => {
+    const oldName = Object.keys(contacts).find(key => contacts[key] === selectedContact);
+    
+    try {
+      const res = await fetch(`http://localhost:3001/api/contacts/${encodeURIComponent(oldName)}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      
+      if (res.ok) {
+        setContacts(data.contacts);
+        setSelectedContact(''); 
+        setIsConfirmingDelete(false);
+      } else {
+        setContactManageMessage({ type: 'error', text: data.error });
+      }
+    } catch (err) {
+      setContactManageMessage({ type: 'error', text: "Network error deleting contact." });
     }
   };
 
@@ -342,9 +401,11 @@ export default function App() {
                   />
                   <Button type="submit" size="sm" className="w-full text-xs">Save Contact</Button>
                 </form>
-                {saveMessage && (
-                  <p className={cn("text-xs", saveMessage.includes('❌') ? "text-destructive" : "text-green-500")}>
-                    {saveMessage}
+                {/* DYNAMIC ICON MESSAGING */}
+                {saveMessage.text && (
+                  <p className={cn("text-[11px] font-medium flex items-center gap-1.5", saveMessage.type === 'error' ? "text-destructive" : "text-green-500")}>
+                    {saveMessage.type === 'error' ? <AlertCircle className="h-3.5 w-3.5 shrink-0" /> : <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />}
+                    {saveMessage.text}
                   </p>
                 )}
               </div>
@@ -354,20 +415,82 @@ export default function App() {
                   <Search className="h-4 w-4" />
                   <h3 className="text-xs font-semibold uppercase tracking-wider">Select Contact</h3>
                 </div>
-                <Select value={selectedContact} onValueChange={setSelectedContact}>
-                  <SelectTrigger className="h-9 text-sm">
-                    <SelectValue>
-                      {Object.keys(contacts).find(key => contacts[key] === selectedContact) || "Select a contact..."}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    {Object.keys(contacts)
-                      .sort((a, b) => a.localeCompare(b))
-                      .map(name => (
-                      <SelectItem key={name} value={contacts[name]}>{name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                
+                <div className="flex flex-col gap-2">
+                  <Select value={selectedContact} onValueChange={setSelectedContact}>
+                    <SelectTrigger className="h-9 text-sm">
+                      <SelectValue>
+                        {Object.keys(contacts).find(key => contacts[key] === selectedContact) || "Select a contact..."}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.keys(contacts)
+                        .sort((a, b) => a.localeCompare(b))
+                        .map(name => (
+                        <SelectItem key={name} value={contacts[name]}>{name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+
+                  {/* INLINE EDIT & THEMED DELETE CONFIRMATION */}
+                  {selectedContact && (
+                    <div className="flex flex-col gap-2 mt-1">
+                      {!isEditingContact && !isConfirmingDelete ? (
+                        <div className="flex items-center gap-2">
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+                            onClick={() => {
+                              setEditContactName(Object.keys(contacts).find(key => contacts[key] === selectedContact) || '');
+                              setIsEditingContact(true);
+                            }}
+                          >
+                            <Edit2 className="h-3 w-3 mr-1.5" /> Rename
+                          </Button>
+                          <Button 
+                            variant="ghost" 
+                            size="sm" 
+                            className="h-7 px-2 text-xs text-destructive opacity-70 hover:opacity-100 hover:bg-destructive/10"
+                            onClick={() => setIsConfirmingDelete(true)}
+                          >
+                            <Trash2 className="h-3 w-3 mr-1.5" /> Delete
+                          </Button>
+                        </div>
+                      ) : isConfirmingDelete ? (
+                        <div className="flex items-center gap-2 bg-destructive/10 p-1.5 rounded-md border border-destructive/20 animate-in fade-in slide-in-from-top-1">
+                          <span className="text-[11px] font-medium text-destructive ml-1">Delete contact?</span>
+                          <div className="ml-auto flex gap-1">
+                            <Button size="sm" variant="ghost" className="h-6 px-2 text-[10px] hover:bg-background/50" onClick={() => setIsConfirmingDelete(false)}>Cancel</Button>
+                            <Button size="sm" variant="destructive" className="h-6 px-2 text-[10px]" onClick={handleDeleteContact}>Confirm</Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-2 animate-in fade-in slide-in-from-top-1">
+                          <Input 
+                            value={editContactName} 
+                            onChange={(e) => setEditContactName(e.target.value)} 
+                            className="h-7 text-xs"
+                            autoFocus
+                          />
+                          <Button size="sm" className="h-7 px-2" onClick={handleRenameContact}>
+                            <Check className="h-3 w-3" />
+                          </Button>
+                          <Button size="sm" variant="ghost" className="h-7 px-2" onClick={() => setIsEditingContact(false)}>
+                            <X className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      )}
+                      
+                      {contactManageMessage.text && (
+                        <p className={cn("text-[11px] font-medium flex items-center gap-1.5", contactManageMessage.type === 'error' ? "text-destructive" : "text-green-500")}>
+                          {contactManageMessage.type === 'error' ? <AlertCircle className="h-3.5 w-3.5 shrink-0" /> : <CheckCircle2 className="h-3.5 w-3.5 shrink-0" />}
+                          {contactManageMessage.text}
+                        </p>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
 
               {chatId && (
@@ -427,7 +550,6 @@ export default function App() {
               )}
             </aside>
 
-            {/* NEW CHAT RENDERER PANE */}
             <section className="flex-1 flex flex-col bg-background relative overflow-hidden">
               {metrics ? (
                 <>
