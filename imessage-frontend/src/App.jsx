@@ -584,17 +584,67 @@ export default function App() {
               {metrics ? (
                 <>
                   <header className="flex flex-col gap-4 border-b border-border bg-card/40 p-4 backdrop-blur-md shrink-0">
-                    <div className="flex items-center justify-between w-full">
-                      <div className="flex gap-6 text-sm">
-                        <span className="font-medium text-foreground">Total: {metrics.total}</span>
-                        <span className="font-medium text-primary">You: {metrics.youCount}</span>
-                        <span className="font-medium text-muted-foreground">Them: {metrics.themCount}</span>
+                    {/* ADDED gap-4 to keep button spacing */}
+                    <div className="flex items-center justify-between w-full gap-4"> 
+                      
+                      {/* ADDED flex-1 min-w-0 TO FORCE BOUNDARIES */}
+                      <div className="flex flex-col gap-3 flex-1 min-w-0"> 
+                        
+                        {/* MAIN TEXT METRICS */}
+                        <div className="flex gap-6 text-sm shrink-0">
+                          <span className="font-medium text-foreground">Texts: {metrics.total}</span>
+                          <span className="font-medium text-primary">You: {metrics.youCount}</span>
+                          <span className="font-medium text-muted-foreground">Them: {metrics.themCount}</span>
+                        </div>
+                        
+                        {/* TAPBACK METRICS & VISUAL BREAKDOWN */}
+                        {(metrics.youTapbacks > 0 || metrics.themTapbacks > 0) && (
+                          <div className="flex flex-col gap-2 min-w-0">
+                            <div className="flex gap-6 text-xs text-muted-foreground shrink-0">
+                              <span className="font-medium">Total Tapbacks: {metrics.youTapbacks + metrics.themTapbacks}</span>
+                              <span className="font-medium text-primary/80">You: {metrics.youTapbacks}</span>
+                              <span className="font-medium text-muted-foreground/80">Them: {metrics.themTapbacks}</span>
+                            </div>
+                            
+                            {/* Individual Icon Counts (CHANGED max-w-full to w-full) */}
+                            <div className="flex items-center gap-6 text-[11px] text-muted-foreground font-medium bg-background/50 border border-border/50 rounded-md px-2.5 py-2 w-full overflow-x-auto custom-scrollbar">
+                              
+                              <div className="flex items-center gap-2 border-r border-border/50 pr-4 shrink-0">
+                                <span className="opacity-60 mr-1 whitespace-nowrap">You used:</span>
+                                {metrics.tapbackBreakdown.filter(t => t.sender === 'You').length === 0 ? <span className="opacity-40">-</span> : null}
+                                {metrics.tapbackBreakdown.filter(t => t.sender === 'You').map((t, idx) => (
+                                  <div key={idx} className="flex items-center gap-1.5 shrink-0">
+                                    <div className="flex items-center justify-center bg-[#262628] rounded-full w-5 h-5 shadow-sm border border-border">
+                                      <TapbackIcon type={t.type} customEmoji={t.customEmoji} />
+                                    </div>
+                                    <span className="text-foreground/80">{t.count}</span>
+                                  </div>
+                                ))}
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0">
+                                <span className="opacity-60 mr-1 whitespace-nowrap">They used:</span>
+                                {metrics.tapbackBreakdown.filter(t => t.sender === 'Them').length === 0 ? <span className="opacity-40">-</span> : null}
+                                {metrics.tapbackBreakdown.filter(t => t.sender === 'Them').map((t, idx) => (
+                                  <div key={idx} className="flex items-center gap-1.5 shrink-0">
+                                    <div className="flex items-center justify-center bg-[#262628] rounded-full w-5 h-5 shadow-sm border border-border">
+                                      <TapbackIcon type={t.type} customEmoji={t.customEmoji} />
+                                    </div>
+                                    <span className="text-foreground/80">{t.count}</span>
+                                  </div>
+                                ))}
+                              </div>
+                              
+                            </div>
+                          </div>
+                        )}
                       </div>
+                      
                       <Button 
                         variant="ghost" 
                         size="sm" 
                         onClick={() => setIsSearchOpen(!isSearchOpen)}
-                        className={cn("h-8 px-2", isSearchOpen ? "text-primary bg-primary/10" : "text-muted-foreground")}
+                        className={cn("h-8 px-2 self-start shrink-0", isSearchOpen ? "text-primary bg-primary/10" : "text-muted-foreground")}
                       >
                         {isSearchOpen ? <X className="h-4 w-4" /> : <Search className="h-4 w-4" />}
                       </Button>
@@ -606,7 +656,7 @@ export default function App() {
                         placeholder="Search within these messages..." 
                         value={searchTerm}
                         onChange={(e) => setSearchTerm(e.target.value)}
-                        className="h-9 text-sm bg-background"
+                        className="h-9 text-sm bg-background shrink-0"
                         autoFocus
                       />
                     )}

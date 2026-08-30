@@ -287,6 +287,40 @@ app.get('/api/messages', async (req, res) => {
             else themCount = row.count;
         });
 
+        // 2. Calculate Tapback Metrics (Now Grouped by Type)
+        const rxStatsQuery = `
+            SELECT m.is_from_me, m.associated_message_type, m.associated_message_emoji, COUNT(*) as count
+            FROM chat_message_join cmj 
+            JOIN message m ON cmj.message_id = m.ROWID 
+            WHERE cmj.chat_id = ? 
+            AND datetime((m.date/1000000000)+978307200, 'unixepoch', 'localtime') BETWEEN ? AND ?
+            AND m.associated_message_type BETWEEN 2000 AND 2999
+            GROUP BY m.is_from_me, m.associated_message_type, m.associated_message_emoji
+            ORDER BY count DESC
+        `;
+
+        const rxStats = await new Promise((resolve, reject) => {
+            db.all(rxStatsQuery, [chatId, startDate, endDate], (err, rows) => {
+                if (err) reject(err);
+                else resolve(rows);
+            });
+        });
+
+        let youTapbacks = 0; let themTapbacks = 0;
+        const tapbackBreakdown = [];
+
+        rxStats.forEach(row => {
+            if (row.is_from_me === 1) youTapbacks += row.count;
+            else themTapbacks += row.count;
+            
+            tapbackBreakdown.push({
+                sender: row.is_from_me === 1 ? 'You' : 'Them',
+                type: row.associated_message_type,
+                customEmoji: row.associated_message_emoji || null,
+                count: row.count
+            });
+        });
+
         const orderDir = sortOrder.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
         const limitClause = displayAll === 'true' ? '' : `LIMIT ${parseInt(limit)}`;
 
@@ -405,7 +439,14 @@ app.get('/api/messages', async (req, res) => {
         if (orderDir === 'DESC') { cleanedMessages.reverse(); }
 
         res.json({
-            metrics: { total: youCount + themCount, youCount, themCount },
+            metrics: { 
+                total: youCount + themCount, 
+                youCount, 
+                themCount,
+                youTapbacks,
+                themTapbacks,
+                tapbackBreakdown // <-- Pass the new breakdown array to React
+            },
             messages: cleanedMessages
         });
 
